@@ -2,6 +2,7 @@
 
 An event-driven serverless pipeline on AWS. Upload a file in the browser and it is validated, compressed, indexed and emailed to you, with no server running in between.
 
+**Live demo:** [legenddhruv.github.io/clouddrop-serverless-pipeline](https://legenddhruv.github.io/clouddrop-serverless-pipeline/) 
 
 
 ## What it does
