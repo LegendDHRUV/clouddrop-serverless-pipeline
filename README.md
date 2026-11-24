@@ -74,6 +74,7 @@ Amazon S3, AWS Lambda (Python 3.12), Amazon DynamoDB, Amazon SNS, AWS Systems Ma
 | Direct link to a raw bucket file | Access Denied | Passed |
 
 ![CloudWatch log](docs/screenshots/cloudwatch-logs.png.jpg)
+----------------------------------------------------------------------------------------------------------------------------------------
 ![Emails](docs/screenshots/email-delivery.png.jpg)
 
 ## Known limitations
@@ -124,9 +125,11 @@ Most of the learning came from debugging, and CloudWatch logs found the cause ev
 - CloudWatch alarm on Lambda errors, and S3 and DynamoDB expiry rules
 - Switch email to Amazon SES with a verified domain
 
+
 ## Author
 
 Dhruv Gupta, B.Tech IT, Maharaja Agrasen Institute of Technology, New Delhi
-dhruvharshgupta@gmail.com
+
+GitHub: [LegendDHRUV](https://github.com/LegendDHRUV) · Email: dhruvharshgupta@gmail.com
 
 Licensed under the MIT License.
