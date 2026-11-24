@@ -64,13 +64,13 @@ Amazon S3, AWS Lambda (Python 3.12), Amazon DynamoDB, Amazon SNS, AWS Systems Ma
 | Valid PNG or JPG | PROCESSED, thumbnail created | Passed |
 | Valid PDF | PROCESSED, opens in the browser | Passed |
 | Wrong passcode | "Wrong passcode" | Passed |
-| Same file uploaded again | DUPLICATE, no second email | Pending |
-| Emailed copy with the file attached | Attachment arrives in the inbox | Pending |
-| `.zip` or `.exe` file | Blocked with an allowed-types error | Pending |
-| File over 5 MB | Blocked with a size error | Pending |
-| `.txt` renamed to `fake.png` | REJECTED, content does not match extension | Pending |
-| Delete a file | Row and files removed from both buckets | Pending |
-| Direct link to a raw bucket file | Access Denied | Pending |
+| Same file uploaded again | DUPLICATE, no second email | Passed |
+| Emailed copy with the file attached | Attachment arrives in the inbox | Passed |
+| `.zip` or `.exe` file | Blocked with an allowed-types error | Passed |
+| File over 5 MB | Blocked with a size error | Passed |
+| `.txt` renamed to `fake.png` | REJECTED, content does not match extension | Passed |
+| Delete a file | Row and files removed from both buckets | Passed |
+| Direct link to a raw bucket file | Access Denied | Passed |
 
 ![CloudWatch log](docs/screenshots/cloudwatch-logs.png.jpg)
 ![Emails](docs/screenshots/email-delivery.png.jpg)
