@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CloudDrop - Dhruv Gupta</title>
+  <meta name="description" content="CloudDrop file uploader and metadata ledger built on AWS S3, Lambda, and DynamoDB.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23141413'/%3E%3Crect x='9' y='9' width='14' height='14' rx='2' fill='%23d94e1f'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <script>
+    try {
+      const saved = localStorage.getItem("cd_theme");
+      const preferred = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.dataset.theme = saved || preferred;
+    } catch {}
+  </script>
+  <style>
+    :root {
+      --bg: #f4f2ec;
+      --surface: #ffffff;
+      --surface-alt: #ece9e0;
+      --ink: #141413;
+      --muted: #63615a;
+      --line: #d6d2c4;
+      --line-strong: #b5b09f;
+      --accent: #d94e1f;
+      --accent-hover: #be4015;
+      --ok: #1b6b3a;
+      --warn: #9a5b13;
+      --bad: #b42318;
+      --sans: "Space Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+    }
+
+    :root[data-theme="dark"] {
+      --bg: #111110;
+      --surface: #181817;
+      --surface-alt: #21211f;
+      --ink: #eceae4;
+      --muted: #8e8c84;
+      --line: #2b2b28;
+      --line-strong: #3f3f39;
+      --accent: #e85d2a;
+      --accent-hover: #f26c3b;
+      --ok: #5ec282;
+      --warn: #e2a34b;
+      --bad: #ef6b63;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    .watermark {
+      position: fixed;
+      top: 16px;
+      right: -10px;
+      z-index: 0;
+      pointer-events: none;
+      user-select: none;
+      text-align: right;
+      font-family: var(--mono);
+      color: color-mix(in srgb, var(--ink) 4.5%, transparent);
+      line-height: 0.92;
+    }
+
+    .watermark strong {
+      display: block;
+      font-size: 128px;
+      font-weight: 600;
+      letter-spacing: -0.06em;
+    }
+
+    .watermark span {
+      display: block;
+      padding-right: 16px;
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    main {
+      position: relative;
+      z-index: 1;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      padding-bottom: 20px;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0;
+      font-size: 25px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 2px;
+      background: var(--accent);
+    }
+
+    .tag,
+    .region {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+    }
+
+    .tag {
+      padding: 2px 8px;
+    }
+
+    .region {
+      padding: 6px 9px;
+    }
+
+    .sub {
+      margin: 0;
+      max-width: 60ch;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .step {
+      padding: 10px 12px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+    }
+
+    .step-num {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .step-title {
+      margin-top: 2px;
+      font-size: 12.5px;
+      font-weight: 600;
+    }
+
+    .step-sub {
+      margin-top: 2px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      margin-bottom: 18px;
+    }
+
+    .auth {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      flex-wrap: wrap;
+    }
+
+    .auth-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    label {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+    }
+
+    input[type="password"],
+    input[type="email"] {
+      width: 200px;
+      padding: 7px 10px;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--ink);
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      outline: none;
+    }
+
+    input[type="password"]:focus,
+    input[type="email"]:focus {
+      border-color: var(--accent);
+    }
+
+    #notifyEmail {
+      width: 230px;
+    }
+
+    #msg {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      min-height: 18px;
+    }
+
+    button {
+      padding: 7px 13px;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 500;
+      color: #ffffff;
+      background: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    button.ghost {
+      color: var(--ink);
+      background: transparent;
+      border-color: var(--line);
+    }
+
+    button.ghost:hover {
+      border-color: var(--ink);
+      background: var(--surface-alt);
+    }
+
+    button.danger {
+      color: var(--bad);
+    }
+
+    button.danger:hover {
+      color: var(--bad);
+      border-color: var(--bad);
+      background: color-mix(in srgb, var(--bad) 10%, transparent);
+    }
+
+    .actions {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .actions button + button {
+      margin-left: 6px;
+    }
+
+    .drop-area {
+      padding: 16px;
+    }
+
+    #drop {
+      position: relative;
+      padding: 38px 20px;
+      text-align: center;
+      background: var(--bg);
+      border: 1.5px dashed var(--line-strong);
+      border-radius: 4px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    #drop:hover,
+    #drop:focus-visible,
+    #drop.over {
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+    }
+
+    .mark {
+      position: absolute;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1;
+      color: var(--muted);
+      user-select: none;
+    }
+
+    .tl {
+      top: 8px;
+      left: 10px;
+    }
+
+    .tr {
+      top: 8px;
+      right: 10px;
+    }
+
+    .bl {
+      bottom: 8px;
+      left: 10px;
+    }
+
+    .br {
+      bottom: 8px;
+      right: 10px;
+    }
+
+    .drop-lead {
+      margin-bottom: 8px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .drop-lead span {
+      color: var(--accent);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .chips {
+      display: inline-flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .chip {
+      padding: 2px 7px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 3px;
+    }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .card-title {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      background: var(--bg);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .stat {
+      padding: 10px 16px;
+      border-right: 1px solid var(--line);
+    }
+
+    .stat:last-child {
+      border-right: 0;
+    }
+
+    .stat-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+
+    .stat-val {
+      margin-top: 2px;
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .scroll {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+    }
+
+    th {
+      padding: 10px 14px;
+      text-align: left;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      background: var(--surface-alt);
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: middle;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    tbody tr:hover td {
+      background: var(--surface-alt);
+    }
+
+    .empty {
+      padding: 32px 16px;
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .thumb {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+    }
+
+    .thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .fname {
+      font-weight: 600;
+      word-break: break-word;
+    }
+
+    .mono {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 3px;
+    }
+
+    .badge.PROCESSED {
+      color: var(--ok);
+      background: color-mix(in srgb, var(--ok) 11%, transparent);
+      border-color: color-mix(in srgb, var(--ok) 32%, transparent);
+    }
+
+    .badge.DUPLICATE {
+      color: var(--warn);
+      background: color-mix(in srgb, var(--warn) 11%, transparent);
+      border-color: color-mix(in srgb, var(--warn) 32%, transparent);
+    }
+
+    .badge.REJECTED {
+      color: var(--bad);
+      background: color-mix(in srgb, var(--bad) 11%, transparent);
+      border-color: color-mix(in srgb, var(--bad) 32%, transparent);
+    }
+
+    .note {
+      display: block;
+      margin-top: 4px;
+      max-width: 240px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      word-break: break-word;
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-top: 28px;
+      padding: 16px 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    .author {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .monogram {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.04em;
+      background: var(--bg);
+      border: 1px solid var(--ink);
+      border-radius: 4px;
+    }
+
+    .author-name {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .author-name span {
+      margin-left: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--muted);
+    }
+
+    .author-stack {
+      margin-top: 2px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+
+    .contact {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .mail {
+      padding: 7px 11px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--ink);
+      text-decoration: none;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+    }
+
+    .mail:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    @media (max-width: 760px) {
+      .pipeline,
+      .stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .stat:nth-child(2) {
+        border-right: 0;
+      }
+
+      .stat:nth-child(1),
+      .stat:nth-child(2) {
+        border-bottom: 1px solid var(--line);
+      }
+    }
+
+    @media (max-width: 560px) {
+      .topbar {
+        flex-direction: column;
+      }
+
+      input[type="password"] {
+        width: 160px;
+      }
+
+      #notifyEmail {
+        width: 180px;
+      }
+
+      .watermark strong {
+        font-size: 84px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="watermark" aria-hidden="true">
+    <strong>DG/CD</strong>
+    <span>Dhruv Gupta - CloudDrop</span>
+  </div>
+
+  <main>
+    <header class="topbar">
+      <div>
+        <div class="brand-row">
+          <h1><span class="dot"></span>CloudDrop</h1>
+          <span class="tag">Dhruv Gupta</span>
+        </div>
+        <p class="sub">Upload PDF, PNG, JPG, or TXT files (max 5 MB) directly to S3 for magic-byte validation, Pillow thumbnailing, SHA-256 duplicate checks, and SMTP copy delivery.</p>
+      </div>
+      <div class="top-actions">
+        <span class="region">ap-southeast-2</span>
+        <button id="themeBtn" class="ghost" type="button">Theme</button>
+      </div>
+    </header>
+
+    <section class="pipeline">
+      <div class="step">
+        <div class="step-num">01 Upload</div>
+        <div class="step-title">S3 Presigned POST</div>
+        <div class="step-sub">Direct browser transfer</div>
+      </div>
+      <div class="step">
+        <div class="step-num">02 Validate</div>
+        <div class="step-title">Lambda Python 3.12</div>
+        <div class="step-sub">Header check &amp; Pillow</div>
+      </div>
+      <div class="step">
+        <div class="step-num">03 Index</div>
+        <div class="step-title">DynamoDB + SHA-256</div>
+        <div class="step-sub">Metadata &amp; hash guard</div>
+      </div>
+      <div class="step">
+        <div class="step-num">04 Deliver</div>
+        <div class="step-title">SSM + Gmail SMTP</div>
+        <div class="step-sub">Encrypted secret copy</div>
+      </div>
+    </section>
+
+    <section class="card auth">
+      <div class="auth-group">
+        <label for="pass">Passcode</label>
+        <input id="pass" type="password" placeholder="Enter passcode">
+        <button id="save" class="ghost" type="button">Save</button>
+      </div>
+      <div class="auth-group">
+        <label for="notifyEmail">Email a copy to</label>
+        <input id="notifyEmail" type="email" placeholder="optional">
+      </div>
+      <span id="msg"></span>
+    </section>
+
+    <section class="card drop-area">
+      <div id="drop" role="button" tabindex="0">
+        <span class="mark tl">+</span>
+        <span class="mark tr">+</span>
+        <span class="mark bl">+</span>
+        <span class="mark br">+</span>
+        <div class="drop-lead">Drop files, paste with Ctrl+V, or <span>browse local storage</span></div>
+        <div class="chips">
+          <span class="chip">PDF</span>
+          <span class="chip">PNG</span>
+          <span class="chip">JPG</span>
+          <span class="chip">TXT</span>
+          <span class="chip">MAX 5 MB</span>
+        </div>
+        <input id="file" type="file" multiple hidden accept=".pdf,.png,.jpg,.jpeg,.txt">
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <span class="card-title">Files</span>
+        <button id="refresh" class="ghost" type="button">Refresh</button>
+      </div>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-label">Total Files</div>
+          <div class="stat-val" id="statTotal">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Processed</div>
+          <div class="stat-val" id="statOk">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Duplicates</div>
+          <div class="stat-val" id="statDup">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Volume</div>
+          <div class="stat-val" id="statBytes">0.0 KB</div>
+        </div>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Preview</th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Size</th>
+              <th>Status</th>
+              <th>Uploaded</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="7" class="empty">No files yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="author">
+        <div class="monogram">DG</div>
+        <div>
+          <div class="author-name">Dhruv Gupta <span>CloudDrop</span></div>
+          <div class="author-stack">AWS S3, Lambda, DynamoDB, SSM Parameter Store &amp; SNS</div>
+        </div>
+      </div>
+      <div class="contact">
+        <a class="mail" href="mailto:dhruvharshgupta@gmail.com">dhruvharshgupta@gmail.com</a>
+        <button id="copyEmail" class="ghost" type="button">Copy Email</button>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    const API_URL = "https://bzyyjv7dik5k2nyx3v553ny4xm0vfzfg.lambda-url.ap-southeast-2.on.aws";
+    const OWNER_ADDR = "dhruvharshgupta@gmail.com";
+
+    const $ = (id) => document.getElementById(id);
+    const pending = new Set();
+    const thumbCache = {};
+    let pollTimer = null;
+
+    function getStore(key) {
+      try {
+        return localStorage.getItem(key) || "";
+      } catch {
+        return "";
+      }
+    }
+
+    function setStore(key, val) {
+      try {
+        localStorage.setItem(key, val);
+      } catch {}
+    }
+
+    let passcode = getStore("cd_pass");
+    $("pass").value = passcode;
+    $("notifyEmail").value = getStore("cd_email");
+
+    function say(text, bad) {
+      $("msg").textContent = text;
+      $("msg").style.color = bad ? "var(--bad)" : "var(--muted)";
+    }
+
+    async function api(path, opts = {}) {
+      const r = await fetch(API_URL + path, {
+        ...opts,
+        headers: {
+          "Content-Type": "application/json",
+          "x-passcode": passcode,
+        },
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(data.error || "HTTP " + r.status);
+      }
+      return data;
+    }
+
+    async function uploadOne(file) {
+      const email = $("notifyEmail").value.trim();
+      setStore("cd_email", email);
+      const { file_id, post } = await api("/upload-url", {
+        method: "POST",
+        body: JSON.stringify({
+          filename: file.name,
+          content_type: file.type || "application/octet-stream",
+          size: file.size,
+          notify_email: email,
+        }),
+      });
+      const fd = new FormData();
+      Object.entries(post.fields).forEach(([k, v]) => fd.append(k, v));
+      fd.append("file", file);
+      const r = await fetch(post.url, { method: "POST", body: fd });
+      if (!r.ok) {
+        throw new Error("Upload to S3 failed (" + r.status + ")");
+      }
+      pending.add(file_id);
+    }
+
+    async function handleFiles(list) {
+      for (const f of list) {
+        try {
+          say("Uploading " + f.name + "...");
+          await uploadOne(f);
+          say("Uploaded " + f.name + ". Processing...");
+        } catch (e) {
+          say(f.name + ": " + e.message, true);
+        }
+      }
+      startPolling();
+    }
+
+    function startPolling() {
+      clearInterval(pollTimer);
+      const started = Date.now();
+      loadFiles();
+      pollTimer = setInterval(async () => {
+        await loadFiles();
+        if (!pending.size) {
+          clearInterval(pollTimer);
+        } else if (Date.now() - started > 60000) {
+          pending.clear();
+          clearInterval(pollTimer);
+          say("Still processing. Click Refresh in a moment.");
+        }
+      }, 2000);
+    }
+
+    function fmtSize(n) {
+      return n > 1048576 ? (n / 1048576).toFixed(2) + " MB" : (n / 1024).toFixed(1) + " KB";
+    }
+
+    function esc(s) {
+      const chars = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+      return String(s).replace(/[&<>"']/g, (c) => chars[c]);
+    }
+
+    function extTag(name) {
+      const dot = String(name || "").lastIndexOf(".");
+      return dot !== -1 ? name.slice(dot + 1).toUpperCase().slice(0, 4) : "FILE";
+    }
+
+    function updateStats(files) {
+      let bytes = 0;
+      let ok = 0;
+      let dup = 0;
+      for (const f of files) {
+        bytes += Number(f.size_bytes) || 0;
+        if (f.status === "PROCESSED") ok++;
+        if (f.status === "DUPLICATE") dup++;
+      }
+      $("statTotal").textContent = files.length;
+      $("statOk").textContent = ok;
+      $("statDup").textContent = dup;
+      $("statBytes").textContent = fmtSize(bytes);
+    }
+
+    async function loadFiles() {
+      try {
+        const { files } = await api("/files");
+        files.forEach((f) => pending.delete(f.file_id));
+        render(files);
+      } catch (e) {
+        say(e.message, true);
+        clearInterval(pollTimer);
+      }
+    }
+
+    function render(files) {
+      updateStats(files);
+      if (!files.length) {
+        $("rows").innerHTML = '<tr><td colspan="7" class="empty">No files yet.</td></tr>';
+        return;
+      }
+      $("rows").innerHTML = files
+        .map(
+          (f) => `
+          <tr>
+            <td>
+              <div class="thumb">
+                ${f.thumbnail_uri ? `<img data-id="${esc(f.file_id)}" alt="">` : esc(extTag(f.original_name))}
+              </div>
+            </td>
+            <td class="fname">${esc(f.original_name)}</td>
+            <td class="mono">${esc(f.mime_type)}</td>
+            <td class="mono">${fmtSize(f.size_bytes)}</td>
+            <td>
+              <span class="badge ${esc(f.status)}">${esc(f.status)}</span>
+              ${f.reason ? `<span class="note">${esc(f.reason)}</span>` : ""}
+              ${f.email_status ? `<span class="note">${esc(f.email_status)}</span>` : ""}
+            </td>
+            <td class="mono">${new Date(f.uploaded_at).toLocaleString()}</td>
+            <td class="actions">
+              ${f.status === "PROCESSED" ? `<button class="ghost" data-dl="${esc(f.file_id)}" type="button">Open</button>` : ""}
+              <button class="ghost danger" data-del="${esc(f.file_id)}" data-name="${esc(f.original_name)}" type="button">Delete</button>
+            </td>
+          </tr>`
+        )
+        .join("");
+
+      document.querySelectorAll(".thumb img").forEach(loadThumb);
+      document.querySelectorAll("[data-dl]").forEach((b) => {
+        b.addEventListener("click", () => openFile(b.dataset.dl));
+      });
+      document.querySelectorAll("[data-del]").forEach((b) => {
+        b.addEventListener("click", () => deleteFile(b.dataset.del, b.dataset.name));
+      });
+    }
+
+    async function loadThumb(img) {
+      const id = img.dataset.id;
+      try {
+        if (!thumbCache[id]) {
+          thumbCache[id] = (await api("/download?kind=thumb&file_id=" + id)).url;
+        }
+        img.src = thumbCache[id];
+      } catch {}
+    }
+
+    async function openFile(id) {
+      try {
+        window.open((await api("/download?kind=processed&file_id=" + id)).url, "_blank");
+      } catch (e) {
+        say(e.message, true);
+      }
+    }
+
+    async function deleteFile(id, name) {
+      if (!confirm("Delete " + name + " permanently? This removes the original, the processed copy and the record.")) {
+        return;
+      }
+      try {
+        say("Deleting " + name + "...");
+        await api("/delete", { method: "POST", body: JSON.stringify({ file_id: id }) });
+        delete thumbCache[id];
+        say("Deleted " + name + ".");
+        loadFiles();
+      } catch (e) {
+        say("Delete failed: " + e.message, true);
+      }
+    }
+
+    function savePasscode() {
+      passcode = $("pass").value;
+      setStore("cd_pass", passcode);
+      say("Saved.");
+      loadFiles();
+    }
+
+    $("themeBtn").addEventListener("click", () => {
+      const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = next;
+      setStore("cd_theme", next);
+    });
+
+    $("copyEmail").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(OWNER_ADDR);
+        $("copyEmail").textContent = "Copied";
+        setTimeout(() => {
+          $("copyEmail").textContent = "Copy Email";
+        }, 1800);
+      } catch {
+        say(OWNER_ADDR);
+      }
+    });
+
+    $("save").addEventListener("click", savePasscode);
+    $("pass").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") savePasscode();
+    });
+    $("refresh").addEventListener("click", loadFiles);
+
+    const drop = $("drop");
+    drop.addEventListener("click", () => $("file").click());
+    drop.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        $("file").click();
+      }
+    });
+
+    ["dragover", "dragenter"].forEach((ev) => {
+      drop.addEventListener(ev, (e) => {
+        e.preventDefault();
+        drop.classList.add("over");
+      });
+    });
+
+    drop.addEventListener("dragleave", (e) => {
+      e.preventDefault();
+      drop.classList.remove("over");
+    });
+
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault();
+      drop.classList.remove("over");
+      handleFiles([...e.dataTransfer.files]);
+    });
+
+    $("file").addEventListener("change", (e) => {
+      handleFiles([...e.target.files]);
+      e.target.value = "";
+    });
+
+    window.addEventListener("paste", (e) => {
+      const files = e.clipboardData?.files;
+      if (files?.length) handleFiles([...files]);
+    });
+
+    if (API_URL.startsWith("http") && passcode) {
+      loadFiles();
+    } else {
+      say("Enter your passcode to load indexed files.");
+    }
+  </script>
+</body>
+</html>
